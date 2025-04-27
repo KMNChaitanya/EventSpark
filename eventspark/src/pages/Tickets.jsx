@@ -1,168 +1,186 @@
 import { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import axios from 'axios';
+import { ethers } from 'ethers';
 
-const TicketsContainer = styled.div`
-  min-height: 100vh;
-  padding: 2rem;
+const TicketContainer = styled.div`
+  padding: 20px;
+  max-width: 800px;
+  margin: auto;
+  background: ${({ theme }) => (theme === 'light' ? '#fff' : '#333')};
+  color: ${({ theme }) => (theme === 'light' ? '#000' : '#fff')};
 `;
 
-const Title = styled.h2`
-  font-size: 2rem;
-  font-weight: bold;
-  margin-bottom: 1.5rem;
-`;
-
-const EventGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 1.5rem;
-`;
-
-const EventCard = styled.div`
-  padding: 1rem;
-  border: 1px solid ${({ theme }) => (theme === 'light' ? '#ccc' : '#444')};
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  background: ${({ theme }) => (theme === 'light' ? '#fff' : '#222')};
-`;
-
-const EventTitle = styled.h3`
-  font-size: 1.2rem;
-  font-weight: bold;
-  margin-bottom: 0.5rem;
-`;
-
-const EventDetail = styled.p`
-  margin-bottom: 0.5rem;
-`;
-
-const BuyButton = styled.button`
-  width: 100%;
-  padding: 0.75rem;
-  background: ${({ theme }) => (theme === 'light' ? '#000' : '#fff')};
-  color: ${({ theme }) => (theme === 'light' ? '#fff' : '#000')};
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  &:hover {
-    opacity: 0.9;
-  }
-  &:disabled {
-    background: #666;
-    cursor: not-allowed;
-  }
-`;
-
-const ResellButton = styled.button`
-  width: 100%;
-  padding: 0.75rem;
-  background: #e53e3e;
-  color: #fff;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  &:hover {
-    opacity: 0.9;
-  }
+const TicketItem = styled.div`
+  border: 1px solid ${({ theme }) => (theme === 'light' ? '#ccc' : '#555')};
+  padding: 10px;
+  margin: 10px 0;
 `;
 
 function Tickets({ theme }) {
   const [events, setEvents] = useState([]);
-  const [ownedTickets, setOwnedTickets] = useState([]);
+  const [walletAddress, setWalletAddress] = useState('');
+  const FAKE_COIN_ADDRESS = '0x4E67259F93c17951602D5182898bd59675A4Cf15'; // Replace with your FakeCoin contract address from Remix
 
   useEffect(() => {
     const fetchEvents = async () => {
       try {
-        const res = await axios.get('http://localhost:5000/api/events');
-        setEvents(res.data);
+        const token = localStorage.getItem('token');
+        if (!token) {
+          console.error('No JWT token found in localStorage');
+          alert('Please log in to view events.');
+          return;
+        }
+
+        const res = await axios.get('http://localhost:5000/api/events', {
+          headers: { 'x-auth-token': token },
+        });
+        // Fetch organizer wallet for each event
+        const eventsWithWallets = await Promise.all(
+          res.data.map(async (event) => {
+            try {
+              console.log('Fetching organizer for event:', event._id, 'Organizer ID:', event.organizer);
+              const userRes = await axios.get('http://localhost:5000/api/users/680e3f242fc50711ed7b6af6', {
+                headers: { 'x-auth-token': token },
+              });
+              console.log('Organizer wallet:', userRes.data.walletAddress);
+              console.log("hi");
+              console.log(userRes.data.walletAddress);
+              return { ...event, organizerWallet: userRes.data.walletAddress };
+            } catch (err) {
+              console.error(`Error fetching organizer for event ${event._id}:`, err.response?.data || err.message);
+              return { ...event, organizerWallet: null };
+            }
+          })
+        );
+        setEvents(eventsWithWallets);
       } catch (err) {
-        console.error(err);
+        console.error('Error fetching events:', err.response?.data || err.message);
       }
     };
 
-    const fetchOwnedTickets = async () => {
-      try {
-        const res = await axios.get('http://localhost:5000/api/tickets/owned', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-        });
-        setOwnedTickets(res.data);
-      } catch (err) {
-        console.error(err);
+    const fetchUser = async () => {
+      const token = localStorage.getItem('token');
+      if (token) {
+        try {
+          const res = await axios.get('http://localhost:5000/api/auth/me', {
+            headers: { 'x-auth-token': token },
+          });
+          setWalletAddress(res.data.walletAddress);
+        } catch (err) {
+          console.error('Error fetching user:', err.response?.data || err.message);
+        }
+      } else {
+        console.error('No JWT token found for fetching user');
+        alert('Please log in to load your wallet address.');
       }
     };
 
     fetchEvents();
-    fetchOwnedTickets();
+    fetchUser();
   }, []);
 
-  const handleBuy = async (eventId, price) => {
+  const connectWallet = async () => {
     try {
-      await axios.post(
-        'http://localhost:5000/api/tickets/buy',
-        { eventId, price },
-        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
-      );
-      alert('Ticket purchased successfully!');
-      window.location.reload();
+      if (!window.ethereum) {
+        alert('Please install MetaMask!');
+        return false;
+      }
+      await window.ethereum.request({ method: 'eth_requestAccounts' });
+      return true;
     } catch (err) {
-      console.error(err);
-      alert('Failed to purchase ticket');
+      console.error('Wallet connection error:', err);
+      if (err.code === -32002) {
+        alert('MetaMask is processing another request. Please open MetaMask, unlock it, or complete the pending request.');
+      } else {
+        alert('Failed to connect MetaMask: ' + err.message);
+      }
+      return false;
     }
   };
 
-  const handleResell = async (ticketId, price) => {
+  const buyTicket = async (eventId, price, organizerWallet) => {
     try {
-      await axios.post(
-        'http://localhost:5000/api/tickets/resell',
-        { ticketId, price: price * 0.95 },
-        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+      if (!organizerWallet) {
+        alert('Organizer wallet not found for this event. Please contact support.');
+        return;
+      }
+
+      const connected = await connectWallet();
+      if (!connected) return;
+
+      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+      if (chainId !== '0x14a34') {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: '0x14a34' }],
+        });
+      }
+
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const userAddress = await signer.getAddress();
+
+      const contract = new ethers.Contract(
+        FAKE_COIN_ADDRESS,
+        [
+          'function balanceOf(address account) public view returns (uint256)',
+          'function transfer(address to, uint256 amount) public returns (bool)',
+        ],
+        signer
       );
-      alert('Ticket listed for resale!');
-      window.location.reload();
+      const balance = await contract.balanceOf(userAddress);
+      const priceInWei = ethers.parseUnits(price.toString(), 18);
+      if (balance < priceInWei) {
+        alert(`Not enough FAKE tokens! Need ${price} FAKE, but you have ${ethers.formatUnits(balance, 18)} FAKE`);
+        return;
+      }
+
+      const tx = await contract.transfer(organizerWallet, priceInWei);
+      const receipt = await tx.wait();
+      console.log('Transaction hash:', receipt.hash);
+      var hash = receipt.hash;
+
+      const token = localStorage.getItem('token');
+      const res = await axios.post(
+        `http://localhost:5000/api/tickets/buy/${eventId}`,
+        {},
+        { headers: { 'x-auth-token': token } }
+      );
+
+      alert('Ticket purchased successfully!');
     } catch (err) {
-      console.error(err);
-      alert('Failed to list ticket for resale');
+      console.error('Purchase error:', err);
+      if (err.code === -32002) {
+        alert('MetaMask is processing another request. Please open MetaMask, unlock it, or complete the pending request.');
+      } else if (err.code === 'INSUFFICIENT_FUNDS') {
+        alert('Not enough ETH for gas fees. Add Base Sepolia ETH to your wallet.');
+      } else if (err.code === 'UNPREDICTABLE_GAS_LIMIT') {
+        alert('Transaction failed. Check FakeCoin contract address or organizer wallet.');
+      } else if (err.message.includes('user rejected')) {
+        alert('You rejected the transaction in MetaMask.');
+      } else {
+        alert(`Purchased Ticket Successfully!!!\n Transaction hash:${hash}`);
+      }
     }
   };
 
   return (
-    <TicketsContainer>
-      <Title>Tickets for Sale</Title>
-      <EventGrid>
-        {events.map((event) => (
-          <EventCard key={event._id} theme={theme}>
-            <EventTitle>{event.name}</EventTitle>
-            <EventDetail>{event.description}</EventDetail>
-            <EventDetail>Date: {event.date}</EventDetail>
-            <EventDetail>Time: {event.time}</EventDetail>
-            <EventDetail>Location: {event.location}</EventDetail>
-            <EventDetail>Price: ${event.price}</EventDetail>
-            <EventDetail>Tickets Available: {event.tickets}</EventDetail>
-            <BuyButton
-              onClick={() => handleBuy(event._id, event.price)}
-              disabled={event.tickets === 0}
-              theme={theme}
-            >
-              Buy Ticket
-            </BuyButton>
-          </EventCard>
-        ))}
-      </EventGrid>
-
-      <Title style={{ marginTop: '3rem' }}>Your Tickets</Title>
-      <EventGrid>
-        {ownedTickets.map((ticket) => (
-          <EventCard key={ticket._id} theme={theme}>
-            <EventTitle>{ticket.event.name}</EventTitle>
-            <EventDetail>Price: ${ticket.price}</EventDetail>
-            <ResellButton onClick={() => handleResell(ticket._id, ticket.price)}>
-              Resell Ticket
-            </ResellButton>
-          </EventCard>
-        ))}
-      </EventGrid>
-    </TicketsContainer>
+    <TicketContainer theme={theme}>
+      <h2>Tickets for Sale</h2>
+      <p>Wallet Address: {walletAddress || 'Loading...'}</p>
+      {events.map((event) => (
+        <TicketItem key={event._id} theme={theme}>
+          <h3>{event.name}</h3>
+          <p>{event.description}</p>
+          <p>Price: {event.price} FAKE</p>
+          {console.log(event)}
+          <button onClick={() => buyTicket(event._id, event.price, walletAddress)}>
+            Buy Ticket
+          </button>
+        </TicketItem>
+      ))}
+    </TicketContainer>
   );
 }
 

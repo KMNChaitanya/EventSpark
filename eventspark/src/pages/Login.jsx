@@ -68,25 +68,35 @@ const LinkText = styled.p`
   }
 `;
 
+const ErrorText = styled.p`
+  color: red;
+  text-align: center;
+  margin-bottom: 1rem;
+`;
+
 function Login({ theme }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('attendee');
+  const [error, setError] = useState('');
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    setError('');
     try {
-      const res = await axios.post('http://localhost:5000/api/auth/login', { email, password, role });
+      // Clean password to remove any unwanted backslashes
+      const cleanedPassword = password.replace(/\\/g, '');
+      const res = await axios.post('http://localhost:5000/api/auth/login', {
+        email,
+        password: cleanedPassword,
+      });
       localStorage.setItem('token', res.data.token);
-      if (role === 'organizer') {
-        navigate('/organizer');
-      } else {
-        navigate('/attendee');
-      }
+      // Navigate based on role returned by backend
+      navigate(res.data.user.role === 'organizer' ? '/organizer' : '/attendee');
     } catch (err) {
       console.error(err);
-      alert('Login failed');
+      setError(err.response?.data?.msg || 'Login failed');
     }
   };
 
@@ -94,45 +104,50 @@ function Login({ theme }) {
     <LoginContainer>
       <FormContainer theme={theme}>
         <Title>Login</Title>
-        <RadioGroup>
-          <RadioLabel>
-            <input
-              type="radio"
-              name="role"
-              value="organizer"
-              checked={role === 'organizer'}
-              onChange={(e) => setRole(e.target.value)}
-              style={{ marginRight: '0.5rem' }}
-            />
-            Organizer
-          </RadioLabel>
-          <RadioLabel>
-            <input
-              type="radio"
-              name="role"
-              value="attendee"
-              checked={role === 'attendee'}
-              onChange={(e) => setRole(e.target.value)}
-              style={{ marginRight: '0.5rem' }}
-            />
-            Attendee
-          </RadioLabel>
-        </RadioGroup>
-        <Input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          theme={theme}
-        />
-        <Input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          theme={theme}
-        />
-        <Button onClick={handleLogin} theme={theme}>Login</Button>
+        {error && <ErrorText>{error}</ErrorText>}
+        <form onSubmit={handleLogin}>
+          <RadioGroup>
+            <RadioLabel>
+              <input
+                type="radio"
+                name="role"
+                value="organizer"
+                checked={role === 'organizer'}
+                onChange={(e) => setRole(e.target.value)}
+                style={{ marginRight: '0.5rem' }}
+              />
+              Organizer
+            </RadioLabel>
+            <RadioLabel>
+              <input
+                type="radio"
+                name="role"
+                value="attendee"
+                checked={role === 'attendee'}
+                onChange={(e) => setRole(e.target.value)}
+                style={{ marginRight: '0.5rem' }}
+              />
+              Attendee
+            </RadioLabel>
+          </RadioGroup>
+          <Input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            theme={theme}
+            required
+          />
+          <Input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            theme={theme}
+            required
+          />
+          <Button type="submit" theme={theme}>Login</Button>
+        </form>
         <LinkText theme={theme}>
           Don't have an account? <Link to="/signup">Sign up</Link>
         </LinkText>

@@ -1,13 +1,12 @@
 const express = require('express');
 const Event = require('../models/Event');
 const auth = require('../middleware/auth');
+const { findById } = require('../models/User');
 
 const router = express.Router();
 
 router.post('/', auth, async (req, res) => {
-  if (req.user.role !== 'organizer') {
-    return res.status(403).json({ error: 'Only organizers can create events' });
-  }
+  
   try {
     const event = new Event({ ...req.body, organizer: req.user.userId });
     await event.save();
